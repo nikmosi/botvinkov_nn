@@ -1,116 +1,162 @@
+import json
+import random
 from math import exp
-from pprint import pprint
 
 
 def sigmoid(x: float) -> float:
-    return 1.0 / (1.0 + exp(-x))
+    clamped = max(min(x, 500.0), -500.0)
+    return 1.0 / (1.0 + exp(-clamped))
 
 
 def sigmoid_derivative(x: float) -> float:
-    return (1 - x) * x
+    return (1.0 - x) * x
 
 
-def main():
-    memory = []
-    memory.append([0, 1])
-    memory.append([])
-    memory.append([])
-    memory.append([])
+def init_network(sizes: list[int]) -> dict[str, list]:
+    return {
+        "weights": [
+            [
+                [random.uniform(-0.5, 0.5) for _ in range(sizes[i + 1])]
+                for _ in range(sizes[i])
+            ]
+            for i in range(len(sizes) - 1)
+        ],
+        "biases": [
+            [random.uniform(-0.5, 0.5) for _ in range(sizes[i + 1])]
+            for i in range(len(sizes) - 1)
+        ],
+    }
+
+
+def forward(network: dict[str, list], inputs: list[float]) -> list[list[float]]:
+    memory = [inputs]
+    for weights, biases in zip(network["weights"], network["biases"], strict=True):
+        prev = memory[-1]
+        nxt = [
+            sigmoid(biases[i] + sum(prev[j] * weights[j][i] for j in range(len(prev))))
+            for i in range(len(biases))
+        ]
+        memory.append(nxt)
+    return memory
+
+
+def train(network: dict[str, list], steps: int = 30000, lr: float = 0.5) -> None:
+    print(f"Обучение: {steps} шагов...")
+    total_loss = 0.0
+    weights = network["weights"]
+    biases = network["biases"]
+
+    for step in range(steps):
+        x = [random.random(), random.random()]
+        y = (x[0] + x[1]) / 2.0
+
+        memory = forward(network, x)
+        o_actual = memory[-1][0]
+        error = y - o_actual
+        total_loss += error**2
+        d_o = error * sigmoid_derivative(o_actual)
+
+        deltas = [[d_o]]
+        for back_step in range(1, len(weights)):
+            from_ = deltas[-1]
+            w = weights[-back_step]
+            mem = memory[-back_step - 1]
+            to_ = []
+            for i in range(len(w)):
+                fn = sigmoid_derivative(mem[i])
+                s = sum(w[i][j] * from_[j] for j in range(len(from_)))
+                to_.append(fn * s)
+            deltas.append(to_)
+
+        deltas.reverse()
+        for layer_idx in range(len(weights)):
+            d_next = deltas[layer_idx]
+            a_prev = memory[layer_idx]
+            for i in range(len(d_next)):
+                biases[layer_idx][i] += lr * d_next[i]
+                for j in range(len(a_prev)):
+                    weights[layer_idx][j][i] += lr * d_next[i] * a_prev[j]
+
+        if (step + 1) % (steps // 5 or 1) == 0:
+            avg_loss = total_loss / (steps // 5 or 1)
+            print(f"Шаг {step + 1}/{steps} | Средняя ошибка (MSE): {avg_loss:.6f}")
+            total_loss = 0.0
+    print("Обучение завершено.")
+
+
+def save_model(network: dict[str, list], path: str = "model.json") -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(network, f, indent=2)
+    print(f"Модель сохранена в '{path}'.")
+
+
+def load_model(path: str = "model.json") -> dict[str, list]:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, list):
+        # Backward compatibility with weight-only models
+        data = {
+            "weights": data,
+            "biases": [[0.0 for _ in layer[0]] for layer in data],
+        }
+    print(f"Модель успешно загружена из '{path}'.")
+    return data
+
+
+def test_model(network: dict[str, list]) -> None:
+    try:
+        raw = input("Введите 2 числа (например, 0.2 0.8): ").strip()
+        nums = [float(val) for val in raw.split()]
+        if len(nums) != 2:
+            print("Ошибка: нужно ввести ровно 2 числа.")
+            return
+        if not (0.0 <= nums[0] <= 1.0 and 0.0 <= nums[1] <= 1.0):
+            print("Предупреждение: числа выходят за [0, 1].")
+        pred = forward(network, nums)[-1][0]
+        expected = (nums[0] + nums[1]) / 2.0
+        print(f"Истинное среднее: {expected:.4f}")
+        print(f"Предсказание сети: {pred:.4f}")
+        print(f"Абсолютная разница: {abs(pred - expected):.4f}")
+    except ValueError:
+        print("Ошибка: введены некорректные числа.")
+
+
+def main() -> None:
     sizes = [2, 3, 2, 1]
-    network = [
-        [
-            [
-                0.1,
-                0.1,
-                0.1,
-            ],
-            [
-                0.5,
-                0.5,
-                0.5,
-            ],
-        ],
-        [
-            [
-                0.3,
-                0.3,
-            ],
-            [
-                0.4,
-                0.4,
-            ],
-            [
-                0.5,
-                0.5,
-            ],
-        ],
-        [
-            [
-                0.1,
-            ],
-            [
-                0.1,
-            ],
-        ],
-    ]
-    print("==================== before =========================")
-    pprint(network, indent=2, width=20)
-    print("==================== before =========================\n")
+    network = init_network(sizes)
 
-    print("==================== forward =========================")
-    for step in range(len(network)):
-        size = sizes[step + 1]
-        size_prev = sizes[step]
-        weights = network[step]
-        mem_prev = memory[step]
-        mem_next = [0] * size
-        memory[step + 1] = mem_next
-        for i in range(size):
-            val_inp = 0
-            for j in range(size_prev):
-                val_inp += mem_prev[j] * weights[j][i]
+    while True:
+        print("\n=== Меню нейросети ===")
+        print("1. Обучить модель")
+        print("2. Сохранить модель")
+        print("3. Загрузить модель")
+        print("4. Проверить модель")
+        print("0. Выход")
 
-            mem_next[i] = sigmoid(val_inp)
-        memory[step - 1].extend(mem_next)
+        choice = input("Выберите пункт: ").strip()
 
-    pprint(memory, indent=2)
-    print("==================== forward =========================\n")
-
-    print("==================== backward =========================")
-    o_ideal = 0.5
-    o_actual = memory[len(sizes) - 1][0]
-    d_o = (o_ideal - o_actual) * sigmoid_derivative(o_actual)
-    deltas = [
-        [d_o],
-        [
-            0,
-            0,
-        ],
-        [
-            0,
-            0,
-            0,
-        ],
-        [
-            0,
-            0,
-        ],
-    ]
-
-    for step in range(1, len(deltas)):
-        from_ = deltas[step - 1]
-        to_ = deltas[step]
-        mem = memory[-step - 1]
-        weights = network[-step]
-        for i in range(len(to_)):
-            fn = sigmoid_derivative(mem[i])
-            sum_ = 0
-            for j, vf in enumerate(from_):
-                sum_ += sum(weights[i]) * vf
-            deltas[step][i] = fn * sum_
-
-    pprint(network, indent=2, width=20)
-    print("==================== backward =========================\n")
+        if choice == "1":
+            raw_steps = input("Количество шагов (Enter для 30000): ").strip()
+            steps = int(raw_steps) if raw_steps.isdigit() else 30000
+            train(network, steps=steps)
+        elif choice == "2":
+            path = input("Имя файла (Enter для 'model.json'): ").strip() or "model.json"
+            save_model(network, path)
+        elif choice == "3":
+            path = input("Имя файла (Enter для 'model.json'): ").strip() or "model.json"
+            try:
+                network = load_model(path)
+            except FileNotFoundError:
+                print(f"Ошибка: файл '{path}' не найден.")
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"Ошибка при загрузке: {e}")
+        elif choice == "4":
+            test_model(network)
+        elif choice == "0":
+            print("Выход.")
+            break
+        else:
+            print("Неверный пункт, попробуйте снова.")
 
 
 if __name__ == "__main__":
