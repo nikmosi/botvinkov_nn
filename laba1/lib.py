@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from tqdm import tqdm
 
 
 def create_model() -> nn.Sequential:
@@ -15,34 +16,53 @@ def create_model() -> nn.Sequential:
 
 def train(
     model: nn.Module,
-    steps: int = 3000,
-    batch_size: int = 64,
-    lr: float = 0.01,
+    epochs: int = 10,
+    batch_size: int = 16,
+    samples_per_epoch: int = 2000,
+    lr: float = 0.3,
+    steps: int | None = None,
 ) -> None:
-    print(f"Обучение ({steps} шагов, батч {batch_size})...")
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.MSELoss()
+    if steps is not None:
+        epochs = max(1, steps // samples_per_epoch)
 
+    print(
+        f"Обучение: {epochs} эпох по {samples_per_epoch} примеров (батч {batch_size})..."
+    )
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+    criterion = nn.MSELoss(reduction="sum")
     model.train()
-    total_loss = 0.0
-    report_every = steps // 5 or 1
 
-    for step in range(steps):
-        x = torch.rand(batch_size, 2)
+    total_batches = (samples_per_epoch + batch_size - 1) // batch_size
+    total_samples = epochs * samples_per_epoch
+    all_loss = 0.0
+
+    for epoch in range(1, epochs + 1):
+        x = torch.rand(samples_per_epoch, 2)
         y = x.mean(dim=1, keepdim=True)
 
-        optimizer.zero_grad()
-        loss = criterion(model(x), y)
-        loss.backward()
-        optimizer.step()
+        with tqdm(
+            range(0, samples_per_epoch, batch_size),
+            total=total_batches,
+            desc=f"Эпоха {epoch}/{epochs}",
+            unit="батч",
+        ) as pbar:
+            for iteration, start_idx in enumerate(pbar, 1):
+                bx = x[start_idx : start_idx + batch_size]
+                by = y[start_idx : start_idx + batch_size]
 
-        total_loss += loss.item()
-        if (step + 1) % report_every == 0:
-            avg_loss = total_loss / report_every
-            print(f"Шаг {step + 1}/{steps} | MSE: {avg_loss:.6f}")
-            total_loss = 0.0
+                optimizer.zero_grad()
+                pred = model(bx)
+                loss_sum = criterion(pred, by)
+                (loss_sum / 2.0).backward()
+                optimizer.step()
 
-    print("Обучение завершено.")
+                batch_loss = loss_sum.item()
+                all_loss += batch_loss
+                current_mse = batch_loss / len(bx)
+                pbar.set_postfix({"MSE": f"{current_mse:.5f}", "итерация": iteration})
+
+    avg_mse = all_loss / total_samples
+    print(f"Обучение завершено. Итоговый MSE: {avg_mse:.6f}")
 
 
 def save_model(model: nn.Module, path: str = "model_torch.pt") -> None:
@@ -92,9 +112,9 @@ def main() -> None:
         choice = input("Выберите действие: ").strip()
 
         if choice == "1":
-            raw_steps = input("Количество шагов [3000]: ").strip()
-            steps = int(raw_steps) if raw_steps.isdigit() else 3000
-            train(model, steps=steps)
+            raw_epochs = input("Количество эпох [10]: ").strip()
+            epochs = int(raw_epochs) if raw_epochs.isdigit() else 10
+            train(model, epochs=epochs)
         elif choice == "2":
             path = input("Имя файла [model_torch.pt]: ").strip() or "model_torch.pt"
             save_model(model, path)

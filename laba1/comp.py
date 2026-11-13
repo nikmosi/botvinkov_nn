@@ -74,25 +74,45 @@ def compare_accuracy(
 
 
 def train_both(my_net: dict, lib_net: torch.nn.Module) -> None:
-    raw = input("Количество шагов [20000]: ").strip()
-    steps = int(raw) if raw.isdigit() else 20000
+    raw = input("Количество эпох [10]: ").strip()
+    epochs = int(raw) if raw.isdigit() else 10
+    batch_size = 16
+    samples_per_epoch = 2000
+    lr = 0.3
+    total_samples = epochs * samples_per_epoch
+
+    print(
+        f"\nУсловия: {epochs} эпох по {samples_per_epoch} примеров | батч {batch_size} (всего {total_samples} примеров)"
+    )
 
     print("\n--- 1. Обучаем my.py (чистый Python) ---")
     t0 = time.perf_counter()
-    my.train(my_net, steps=steps)
+    my.train(
+        my_net,
+        epochs=epochs,
+        batch_size=batch_size,
+        samples_per_epoch=samples_per_epoch,
+        lr=lr,
+    )
     t_my = time.perf_counter() - t0
 
     print("\n--- 2. Обучаем lib.py (PyTorch) ---")
     t0 = time.perf_counter()
-    lib.train(lib_net, steps=steps)
+    lib.train(
+        lib_net,
+        epochs=epochs,
+        batch_size=batch_size,
+        samples_per_epoch=samples_per_epoch,
+        lr=lr,
+    )
     t_lib = time.perf_counter() - t0
 
+    speedup = t_my / t_lib if t_lib > 0 else 1.0
     print("\n" + "=" * 55)
-    print(f"Время обучения my.py:  {t_my:.3f} сек ({steps} примеров)")
-    print(f"Время обучения lib.py: {t_lib:.3f} сек ({steps * 64} примеров)")
-    print(
-        f"Скорость обработки:    my.py = {steps / t_my:.0f} обр/сек | lib.py = {(steps * 64) / t_lib:.0f} обр/сек"
-    )
+    print(f"Примеров обработано: {total_samples} (обе модели)")
+    print(f"Время my.py:         {t_my:.3f} сек ({total_samples / t_my:.0f} обр/сек)")
+    print(f"Время lib.py:        {t_lib:.3f} сек ({total_samples / t_lib:.0f} обр/сек)")
+    print(f"PyTorch быстрее в:   {speedup:.1f}x")
     print("=" * 55)
 
 
