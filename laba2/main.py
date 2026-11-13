@@ -297,7 +297,21 @@ def main() -> None:
     parser.add_argument(
         "--quiet", "-q", action="store_true", help="Тихий режим без лишнего вывода"
     )
+    parser.add_argument(
+        "--web", action="store_true", help="Запустить веб-интерфейс в браузере (порт 8088)"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8088,
+        help="Порт для веб-интерфейса (по умолчанию 8088)",
+    )
     args = parser.parse_args()
+
+    if args.web:
+        import web
+        web.run_server(port=args.port)
+        return
 
     max_cores = os.cpu_count() or 4
     current_cores = min(max_cores, 4)
@@ -357,6 +371,7 @@ def main() -> None:
         print("10. Настройка распараллеливания на ядра CPU")
         print("11. Полный авто-тест всех этапов задания")
         print("12. Сохранить / Загрузить (model.json)")
+        print("13. Запустить веб-интерфейс в браузере (http://localhost:8088)")
         print("0. Выход")
 
         choice = input("Выберите действие: ").strip()
@@ -491,6 +506,10 @@ def main() -> None:
                     print("Файл 'model.json' не найден.")
                 except (RuntimeError, OSError, my.json.JSONDecodeError) as e:
                     print(f"Ошибка загрузки: {e}")
+
+        elif choice == "13":
+            import web
+            web.run_server(port=8088)
 
         elif choice == "0":
             print("\nВыход.")

@@ -1,13 +1,18 @@
 import contextlib
 import io
+import json
 import os
+import threading
+import urllib.request
 
 import torch
+from PIL import Image
 
 import comp
 import dataset
 import lib
 import my
+import web
 
 
 def test_batch_vs_no_batch():
@@ -129,6 +134,53 @@ def test_ascii_art():
     assert len(lines[0]) == 16
 
 
+def test_web_server():
+    """Тест: проверка веб-интерфейса и API эндпоинтов (статус, предсказание, генерация)."""
+    server = web.ThreadingHTTPServer(("127.0.0.1", 0), web.WebHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    base_url = f"http://127.0.0.1:{port}"
+
+    try:
+        # GET /
+        with urllib.request.urlopen(f"{base_url}/") as r:
+            assert r.status == 200
+            assert b"MLP" in r.read()
+
+        # GET /api/status
+        with urllib.request.urlopen(f"{base_url}/api/status") as r:
+            data = json.loads(r.read())
+            assert data["status"] == "ok"
+            assert "cores" in data
+
+        # GET /api/sample
+        with urllib.request.urlopen(f"{base_url}/api/sample") as r:
+            data = json.loads(r.read())
+            assert data["status"] == "ok"
+            assert 0 <= data["predicted_class"] <= 2
+            assert len(data["probabilities"]) == 3
+            assert data["preview"].startswith("data:image/png;base64,")
+
+        # POST /api/predict с бинарными байтами PNG
+        buf = io.BytesIO()
+        Image.new("RGB", (128, 128), (255, 255, 255)).save(buf, format="PNG")
+        req = urllib.request.Request(
+            f"{base_url}/api/predict",
+            data=buf.getvalue(),
+            headers={"Content-Type": "image/png"},
+        )
+        with urllib.request.urlopen(req) as r:
+            data = json.loads(r.read())
+            assert data["status"] == "ok"
+            assert "class_name" in data
+            assert len(data["probabilities"]) == 3
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 if __name__ == "__main__":
     test_batch_vs_no_batch()
     test_multiprocessing()
@@ -138,4 +190,5 @@ if __name__ == "__main__":
     test_comparison_with_torch()
     test_no_console_output()
     test_ascii_art()
+    test_web_server()
     print("Все тесты успешно пройдены!")

@@ -21,6 +21,7 @@
 - [comp.py](file:///home/nik/git-repos/botvinkoy/laba2/comp.py) — сравнение самодельного перцептрона и PyTorch (время, точность, ускорение).
 - [model.py](file:///home/nik/git-repos/botvinkoy/laba2/model.py) — интерфейсный модуль для обратной совместимости.
 - [dataset.py](file:///home/nik/git-repos/botvinkoy/laba2/dataset.py) — генерация изображений 128×128 (Pillow), сохранение/загрузка картинок с диска, аугментации, мультипроцессинг (`multiprocessing.Pool`), ASCII-визуализатор.
+- [web.py](file:///home/nik/git-repos/botvinkoy/laba2/web.py) — браузерный веб-интерфейс (загрузка картинок Drag&Drop / Ctrl+V, генерация, обучение, метрики, доступ по SSH port forward).
 - [main.py](file:///home/nik/git-repos/botvinkoy/laba2/main.py) — интерактивное консольное меню, классификация пользовательских картинок, бенчмарки и CLI-аргументы.
 - [test_laba2.py](file:///home/nik/git-repos/botvinkoy/laba2/test_laba2.py) — юнит-тесты (батч/без батча, с/без мультипроцессинга, сохранение на диск, сравнение с torch, тихий режим).
 
@@ -32,7 +33,15 @@
 # Установка окружения через uv
 uv sync
 
-# Интерактивное меню
+# Запуск веб-интерфейса в браузере (порт 8088 по умолчанию)
+uv run python web.py
+# или: uv run python main.py --web
+
+# Доступ через SSH Port Forward:
+# на своем ПК: ssh -L 8088:localhost:8088 user@host
+# в браузере:  http://localhost:8088
+
+# Интерактивное консольное меню
 uv run python main.py
 
 # Распознавание собственной картинки по пути
