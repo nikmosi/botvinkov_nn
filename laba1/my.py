@@ -1,9 +1,13 @@
 import json
 import random
+from itertools import batched
 from math import exp
+
+from tqdm import tqdm
 
 
 def sigmoid(x: float) -> float:
+    # shortcut: clamp to [-500, 500] to prevent math range overflow
     clamped = max(min(x, 500.0), -500.0)
     return 1.0 / (1.0 + exp(-clamped))
 
@@ -44,9 +48,8 @@ def backward(
     network: dict[str, list],
     memory: list[list[float]],
     target: float,
-    lr: float = 0.5,
-) -> float:
-    weights, biases = network["weights"], network["biases"]
+) -> tuple[list[list[float]], float]:
+    weights = network["weights"]
     output = memory[-1][0]
     error = target - output
     d_o = error * sigmoid_derivative(output)
@@ -64,33 +67,71 @@ def backward(
         deltas.append(to_)
 
     deltas.reverse()
-    for layer_idx in range(len(weights)):
-        d_next = deltas[layer_idx]
-        a_prev = memory[layer_idx]
-        for i in range(len(d_next)):
-            biases[layer_idx][i] += lr * d_next[i]
-            for j in range(len(a_prev)):
-                weights[layer_idx][j][i] += lr * d_next[i] * a_prev[j]
-
-    return error**2
+    return deltas, error**2
 
 
-def train(network: dict[str, list], steps: int = 30000, lr: float = 0.5) -> None:
-    print(f"Обучение ({steps} шагов)...")
-    total_loss = 0.0
+def train(
+    network: dict[str, list],
+    epochs: int = 10,
+    batch_size: int = 16,
+    samples_per_epoch: int = 2000,
+    lr: float = 0.3,
+    steps: int | None = None,
+) -> None:
+    if steps is not None:
+        epochs = max(1, steps // samples_per_epoch)
 
-    for step in range(steps):
-        x = [random.random(), random.random()]
-        y = (x[0] + x[1]) / 2.0
+    print(
+        f"Обучение: {epochs} эпох по {samples_per_epoch} примеров (батч {batch_size})..."
+    )
+    weights, biases = network["weights"], network["biases"]
 
-        memory = forward(network, x)
-        total_loss += backward(network, memory, target=y, lr=lr)
+    for epoch in range(1, epochs + 1):
+        dataset = [
+            ([random.random(), random.random()], None) for _ in range(samples_per_epoch)
+        ]
+        dataset = [(x, (x[0] + x[1]) / 2.0) for x, _ in dataset]
 
-        if (step + 1) % (steps // 5 or 1) == 0:
-            avg_loss = total_loss / (steps // 5 or 1)
-            print(f"Шаг {step + 1}/{steps} | MSE: {avg_loss:.6f}")
-            total_loss = 0.0
-    print("Обучение завершено.")
+        total_loss = 0.0
+        total_batches = (len(dataset) + batch_size - 1) // batch_size
+
+        with tqdm(
+            batched(dataset, batch_size),
+            total=total_batches,
+            desc=f"Эпоха {epoch}/{epochs}",
+            unit="батч",
+        ) as pbar:
+            for iteration, batch in enumerate(pbar, 1):
+                grad_w = [[[0.0 for _ in row] for row in layer] for layer in weights]
+                grad_b = [[0.0 for _ in layer] for layer in biases]
+                batch_loss = 0.0
+
+                for x, y in batch:
+                    memory = forward(network, x)
+                    deltas, loss = backward(network, memory, y)
+                    batch_loss += loss
+
+                    for l in range(len(weights)):
+                        for i, d in enumerate(deltas[l]):
+                            grad_b[l][i] += d
+                            for j, a in enumerate(memory[l]):
+                                grad_w[l][j][i] += d * a
+
+                total_loss += batch_loss
+
+                # Обновление весов и смещений на основе накопленных градиентов батча
+                for l in range(len(weights)):
+                    for i in range(len(biases[l])):
+                        biases[l][i] += lr * grad_b[l][i]
+                    for j in range(len(weights[l])):
+                        for i in range(len(weights[l][j])):
+                            weights[l][j][i] += lr * grad_w[l][j][i]
+
+                current_mse = batch_loss / len(batch)
+                pbar.set_postfix({"MSE": f"{current_mse:.5f}", "итерация": iteration})
+
+    avg_mse = total_loss / samples_per_epoch
+    print(f"Обучение завершено. Итоговый MSE: {avg_mse:.6f}")
 
 
 def save_model(network: dict[str, list], path: str = "model.json") -> None:
@@ -144,9 +185,9 @@ def main() -> None:
         choice = input("Выберите действие: ").strip()
 
         if choice == "1":
-            raw_steps = input("Количество шагов [30000]: ").strip()
-            steps = int(raw_steps) if raw_steps.isdigit() else 30000
-            train(network, steps=steps)
+            raw_epochs = input("Количество эпох [10]: ").strip()
+            epochs = int(raw_epochs) if raw_epochs.isdigit() else 10
+            train(network, epochs=epochs)
         elif choice == "2":
             path = input("Имя файла [model.json]: ").strip() or "model.json"
             save_model(network, path)
