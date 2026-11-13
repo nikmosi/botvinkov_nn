@@ -76,7 +76,7 @@ def backward(
 
 
 def train(network: dict[str, list], steps: int = 30000, lr: float = 0.5) -> None:
-    print(f"Обучение: {steps} шагов...")
+    print(f"Обучение ({steps} шагов)...")
     total_loss = 0.0
 
     for step in range(steps):
@@ -88,7 +88,7 @@ def train(network: dict[str, list], steps: int = 30000, lr: float = 0.5) -> None
 
         if (step + 1) % (steps // 5 or 1) == 0:
             avg_loss = total_loss / (steps // 5 or 1)
-            print(f"Шаг {step + 1}/{steps} | Средняя ошибка (MSE): {avg_loss:.6f}")
+            print(f"Шаг {step + 1}/{steps} | MSE: {avg_loss:.6f}")
             total_loss = 0.0
     print("Обучение завершено.")
 
@@ -96,7 +96,7 @@ def train(network: dict[str, list], steps: int = 30000, lr: float = 0.5) -> None
 def save_model(network: dict[str, list], path: str = "model.json") -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(network, f, indent=2)
-    print(f"Модель сохранена в '{path}'.")
+    print(f"Сохранено в '{path}'.")
 
 
 def load_model(path: str = "model.json") -> dict[str, list]:
@@ -107,26 +107,26 @@ def load_model(path: str = "model.json") -> dict[str, list]:
             "weights": data,
             "biases": [[0.0 for _ in layer[0]] for layer in data],
         }
-    print(f"Модель загружена '{path}'.")
+    print(f"Загружено из '{path}'.")
     return data
 
 
 def test_model(network: dict[str, list]) -> None:
     try:
-        raw = input("Введите 2 числа (например, 0.2 0.8): ").strip()
+        raw = input("Введите два числа от 0 до 1 (например: 0.2 0.8): ").strip()
         nums = [float(val) for val in raw.split()]
         if len(nums) != 2:
-            print("Ошибка: нужно ввести ровно 2 числа.")
+            print("Нужно ровно два числа.")
             return
         if not (0.0 <= nums[0] <= 1.0 and 0.0 <= nums[1] <= 1.0):
-            print("Предупреждение: числа выходят за [0, 1].")
+            print("Внимание: числа должны быть в диапазоне от 0 до 1.")
         pred = forward(network, nums)[-1][0]
         expected = (nums[0] + nums[1]) / 2.0
-        print(f"Истинное среднее: {expected:.4f}")
-        print(f"Предсказание сети: {pred:.4f}")
-        print(f"Абсолютная разница: {abs(pred - expected):.4f}")
+        print(f"Точное среднее:  {expected:.4f}")
+        print(f"Ответ сети:      {pred:.4f}")
+        print(f"Разница:         {abs(pred - expected):.4f}")
     except ValueError:
-        print("Ошибка: введены некорректные числа.")
+        print("Неверный ввод чисел.")
 
 
 def main() -> None:
@@ -141,30 +141,30 @@ def main() -> None:
         print("4. Проверить модель")
         print("0. Выход")
 
-        choice = input("Выберите пункт: ").strip()
+        choice = input("Выберите действие: ").strip()
 
         if choice == "1":
-            raw_steps = input("Количество шагов (Enter для 30000): ").strip()
+            raw_steps = input("Количество шагов [30000]: ").strip()
             steps = int(raw_steps) if raw_steps.isdigit() else 30000
             train(network, steps=steps)
         elif choice == "2":
-            path = input("Имя файла (Enter для 'model.json'): ").strip() or "model.json"
+            path = input("Имя файла [model.json]: ").strip() or "model.json"
             save_model(network, path)
         elif choice == "3":
-            path = input("Имя файла (Enter для 'model.json'): ").strip() or "model.json"
+            path = input("Имя файла [model.json]: ").strip() or "model.json"
             try:
                 network = load_model(path)
             except FileNotFoundError:
-                print(f"Ошибка: файл '{path}' не найден.")
+                print(f"Файл '{path}' не найден.")
             except (json.JSONDecodeError, OSError) as e:
-                print(f"Ошибка при загрузке: {e}")
+                print(f"Не удалось загрузить: {e}")
         elif choice == "4":
             test_model(network)
         elif choice == "0":
             print("Выход.")
             break
         else:
-            print("Неверный пункт, попробуйте снова.")
+            print("Неверный ввод.")
 
 
 if __name__ == "__main__":
