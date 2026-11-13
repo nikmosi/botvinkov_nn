@@ -6,9 +6,9 @@ from typing import Any
 
 import torch
 
+import comp
 import dataset
 import my
-
 
 DEFAULT_COUNTS = [3000, 3000, 3000]
 IMAGE_SIZE = dataset.DEFAULT_IMAGE_SIZE  # 128x128
@@ -165,6 +165,35 @@ def run_random_check(
     print("-" * 40)
 
 
+def run_custom_image_check(
+    network: dict[str, Any], image_path: str, quiet: bool = False
+) -> int:
+    """Распознавание произвольной картинки по пути к файлу с диска."""
+    if not os.path.exists(image_path):
+        if not quiet:
+            print(f"Ошибка: файл '{image_path}' не найден.")
+        return -1
+
+    tensor = dataset.load_image_file(image_path, size=IMAGE_SIZE)
+    pred_cls, probs = my.predict_single(network, tensor)
+
+    if not quiet:
+        print("\n" + "-" * 40)
+        print(f"Пользовательское изображение: {image_path}")
+        print(dataset.ascii_art(tensor, width=24, height=12))
+        print("-" * 40)
+        print(f"Предсказанный класс: {dataset.CLASSES[pred_cls]}")
+        print("Вероятности классов:")
+        for c_i, name in enumerate(dataset.CLASSES):
+            bar = "█" * int(probs[c_i] * 20)
+            print(f"  {name:<12}: {probs[c_i] * 100:5.1f}% | {bar}")
+        print("-" * 40)
+    else:
+        print(dataset.CLASSES[pred_cls])
+
+    return pred_cls
+
+
 def run_auto_test(max_cores: int) -> None:
     """Автоматическая проверка всех этапов лабораторной работы на перцептроне."""
     print("\n" + "#" * 68)
@@ -247,11 +276,62 @@ def main() -> None:
     parser.add_argument(
         "--auto", action="store_true", help="Запустить полный авто-тест всех этапов"
     )
+    parser.add_argument(
+        "--image",
+        type=str,
+        default=None,
+        help="Путь к файлу изображения для распознавания",
+    )
+    parser.add_argument(
+        "--compare", action="store_true", help="Запустить сравнение с PyTorch (comp.py)"
+    )
+    parser.add_argument(
+        "--save-sample",
+        type=str,
+        default=None,
+        help="Сохранить образец картинки на диск",
+    )
+    parser.add_argument(
+        "--cls", type=int, default=0, help="Класс для сохранения образца (0..2)"
+    )
+    parser.add_argument(
+        "--quiet", "-q", action="store_true", help="Тихий режим без лишнего вывода"
+    )
     args = parser.parse_args()
 
     max_cores = os.cpu_count() or 4
     current_cores = min(max_cores, 4)
     torch.set_num_threads(current_cores)
+
+    d_in = IMAGE_SIZE * IMAGE_SIZE * 3
+    if os.path.exists("model.json"):
+        try:
+            net = my.load_model("model.json", verbose=False)
+        except (OSError, KeyError, RuntimeError, my.json.JSONDecodeError):
+            net = my.init_network([d_in, 256, 3])
+    else:
+        net = my.init_network([d_in, 256, 3])
+
+    if args.save_sample:
+        raw_img = dataset.generate_single_image(
+            cls=args.cls, augment=False, size=IMAGE_SIZE
+        )
+        dataset.save_image_file(torch.from_numpy(raw_img), args.save_sample)
+        if not args.quiet:
+            print(
+                f"Образец класса '{dataset.CLASSES[args.cls]}' сохранен в '{args.save_sample}'."
+            )
+        return
+
+    if args.image:
+        run_custom_image_check(net, args.image, quiet=args.quiet)
+        return
+
+    if args.compare:
+        comp.compare_models(
+            counts=[400, 400, 400], epochs=3, size=IMAGE_SIZE, verbose=not args.quiet
+        )
+        return
 
     if args.auto:
         run_auto_test(max_cores)
@@ -260,21 +340,23 @@ def main() -> None:
     # Состояние приложения: простой перцептрон (как в laba1/my.py)
     counts = list(DEFAULT_COUNTS)
     augment = False
-    d_in = IMAGE_SIZE * IMAGE_SIZE * 3
-    net = my.init_network([d_in, 256, 3])
     x_train, y_train, x_test, y_test = None, None, None, None
 
     while True:
-        print_banner(current_cores, counts, augment)
+        if not args.quiet:
+            print_banner(current_cores, counts, augment)
         print(f"1. Сгенерировать датасет (3 класса, размер {IMAGE_SIZE}x{IMAGE_SIZE})")
         print("2. Обучить на текущем датасете")
         print("3. Автоматическая проверка на тестовой выборке")
-        print("4. Проверить случайный рисунок")
-        print("5. Уменьшить количество одного класса")
-        print("6. Переключить искажения")
-        print("7. Настройка распараллеливания на ядра CPU")
-        print("8. Полный авто-тест всех этапов задания")
-        print("9. Сохранить / Загрузить (model.json)")
+        print("4. Проверить случайный рисунок (из памяти)")
+        print("5. Распознать свою картинку по пути к файлу")
+        print("6. Сохранить образец картинки на диск")
+        print("7. Сравнение с PyTorch (lib.py / comp.py)")
+        print("8. Уменьшить количество одного класса")
+        print("9. Переключить искажения")
+        print("10. Настройка распараллеливания на ядра CPU")
+        print("11. Полный авто-тест всех этапов задания")
+        print("12. Сохранить / Загрузить (model.json)")
         print("0. Выход")
 
         choice = input("Выберите действие: ").strip()
@@ -302,10 +384,14 @@ def main() -> None:
                 continue
             raw_ep = input("Количество эпох [6]: ").strip()
             epochs = int(raw_ep) if raw_ep.isdigit() else 6
+            raw_b = input("Размер батча (1 для обучения без батча) [32]: ").strip()
+            batch_sz = int(raw_b) if raw_b.isdigit() and int(raw_b) >= 1 else 32
             print(
-                f"\nОбучение перцептрона ({epochs} эпох, батч 32, ~1 мин, ядер: {current_cores})..."
+                f"\nОбучение перцептрона ({epochs} эпох, батч {batch_sz}, ~1 мин, ядер: {current_cores})..."
             )
-            my.train(net, x_train, y_train, epochs=epochs, batch_size=32, verbose=True)
+            my.train(
+                net, x_train, y_train, epochs=epochs, batch_size=batch_sz, verbose=True
+            )
 
         elif choice == "3":
             if x_test is None:
@@ -321,6 +407,31 @@ def main() -> None:
             run_random_check(net, x_test, y_test)
 
         elif choice == "5":
+            path = input("Введите путь к картинке (PNG/JPG): ").strip()
+            if path:
+                run_custom_image_check(net, path)
+
+        elif choice == "6":
+            for i, name in enumerate(dataset.CLASSES):
+                print(f"  {i}: {name}")
+            raw_c = input("Выберите класс для сохранения [0]: ").strip()
+            cls_idx = int(raw_c) if raw_c.isdigit() and 0 <= int(raw_c) <= 2 else 0
+            fname = (
+                input(f"Имя файла [sample_{dataset.CLASSES[cls_idx]}.png]: ").strip()
+                or f"sample_{dataset.CLASSES[cls_idx]}.png"
+            )
+            raw_img = dataset.generate_single_image(
+                cls=cls_idx, augment=augment, size=IMAGE_SIZE
+            )
+            dataset.save_image_file(torch.from_numpy(raw_img), fname)
+            print(f"Картинка успешно сохранена в '{fname}'.")
+
+        elif choice == "7":
+            comp.compare_models(
+                counts=[400, 400, 400], epochs=3, size=IMAGE_SIZE, verbose=True
+            )
+
+        elif choice == "8":
             print("\nНастройка дисбаланса классов:")
             for i, name in enumerate(dataset.CLASSES):
                 print(f"  {i}: {name}")
@@ -345,7 +456,7 @@ def main() -> None:
             )
             print(f"Датасет обновлен за {time.perf_counter() - t0:.2f} сек.")
 
-        elif choice == "6":
+        elif choice == "9":
             augment = not augment
             status_str = "ВКЛЮЧЕНЫ" if augment else "ВЫКЛЮЧЕНЫ"
             print(f"\nИскажения (шум, повороты, битые пиксели, цвета): {status_str}")
@@ -361,21 +472,21 @@ def main() -> None:
                 )
                 print(f"Датасет перегенерирован за {time.perf_counter() - t0:.2f} сек.")
 
-        elif choice == "7":
+        elif choice == "10":
             current_cores = menu_cores_config(current_cores, max_cores)
 
-        elif choice == "8":
+        elif choice == "11":
             run_auto_test(max_cores)
 
-        elif choice == "9":
+        elif choice == "12":
             sub = input(
                 "1. Сохранить веса в model.json\n2. Загрузить веса из model.json\nВыберите: "
             ).strip()
             if sub == "1":
-                my.save_model(net, "model.json")
+                my.save_model(net, "model.json", verbose=True)
             elif sub == "2":
                 try:
-                    net = my.load_model("model.json")
+                    net = my.load_model("model.json", verbose=True)
                 except FileNotFoundError:
                     print("Файл 'model.json' не найден.")
                 except (RuntimeError, OSError, my.json.JSONDecodeError) as e:

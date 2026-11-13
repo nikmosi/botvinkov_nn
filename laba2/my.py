@@ -4,7 +4,7 @@ from typing import Any
 
 import torch
 
-from dataset import CLASSES, DEFAULT_IMAGE_SIZE
+from dataset import CLASSES, DEFAULT_IMAGE_SIZE, load_image_file
 
 DEFAULT_INPUT_SIZE = DEFAULT_IMAGE_SIZE * DEFAULT_IMAGE_SIZE * 3  # 128*128*3 = 49152
 
@@ -22,7 +22,11 @@ def sigmoid_derivative(a: torch.Tensor) -> torch.Tensor:
 def init_network(sizes: list[int] | None = None) -> dict[str, Any]:
     """Инициализация простого перцептрона: веса и смещения по слоям (как в laba1)."""
     if sizes is None:
-        sizes = [DEFAULT_INPUT_SIZE, 256, 3]  # 128*128*3 -> 256 скрытых -> 3 класса (~1 мин обучения)
+        sizes = [
+            DEFAULT_INPUT_SIZE,
+            256,
+            3,
+        ]  # 128*128*3 -> 256 скрытых -> 3 класса (~1 мин обучения)
 
     weights = []
     biases = []
@@ -83,7 +87,7 @@ def train(
     epochs: int = 6,
     batch_size: int = 32,
     lr: float = 0.5,
-    verbose: bool = True,
+    verbose: bool = False,
 ) -> float:
     """Обучение перцептрона методом градиентного спуска по батчам."""
     num_samples = len(y_train)
@@ -124,7 +128,9 @@ def train(
         avg_loss = total_loss / max(num_samples, 1)
         acc = correct / max(num_samples, 1) * 100.0
         if verbose:
-            print(f"Эпоха {epoch}/{epochs} | MSE: {avg_loss:.5f} | Точность: {acc:.2f}%")
+            print(
+                f"Эпоха {epoch}/{epochs} | MSE: {avg_loss:.5f} | Точность: {acc:.2f}%"
+            )
 
     elapsed = time.perf_counter() - t0
     if verbose:
@@ -137,7 +143,7 @@ def evaluate(
     network: dict[str, Any],
     x_test: torch.Tensor,
     y_test: torch.Tensor,
-    verbose: bool = True,
+    verbose: bool = False,
 ) -> dict[str, Any]:
     """Проверка качества работы перцептрона с расчетом метрик для каждого класса."""
     x_flat = x_test.reshape(len(x_test), -1)
@@ -237,7 +243,17 @@ def predict_single(
     return pred_class, probs
 
 
-def save_model(network: dict[str, Any], path: str = "model.json") -> None:
+def predict_image_file(
+    network: dict[str, Any], path: str, size: int = DEFAULT_IMAGE_SIZE
+) -> tuple[int, list[float]]:
+    """Предсказание класса и вероятностей для изображения по пути к файлу."""
+    img_tensor = load_image_file(path, size=size)
+    return predict_single(network, img_tensor)
+
+
+def save_model(
+    network: dict[str, Any], path: str = "model.json", verbose: bool = False
+) -> None:
     """Сохранение весов перцептрона в формате JSON (как в laba1)."""
     data = {
         "sizes": network["sizes"],
@@ -246,10 +262,11 @@ def save_model(network: dict[str, Any], path: str = "model.json") -> None:
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    print(f"Веса перцептрона сохранены в '{path}'.")
+    if verbose:
+        print(f"Веса перцептрона сохранены в '{path}'.")
 
 
-def load_model(path: str = "model.json") -> dict[str, Any]:
+def load_model(path: str = "model.json", verbose: bool = False) -> dict[str, Any]:
     """Загрузка весов перцептрона из JSON (как в laba1)."""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -257,5 +274,6 @@ def load_model(path: str = "model.json") -> dict[str, Any]:
     weights = [torch.tensor(w, dtype=torch.float32) for w in data["weights"]]
     biases = [torch.tensor(b, dtype=torch.float32) for b in data["biases"]]
 
-    print(f"Веса перцептрона загружены из '{path}'.")
+    if verbose:
+        print(f"Веса перцептрона загружены из '{path}'.")
     return {"weights": weights, "biases": biases, "sizes": data["sizes"]}

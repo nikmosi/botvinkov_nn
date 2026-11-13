@@ -49,9 +49,7 @@ def generate_single_image(
     if augment:
         # Поворот
         angle = random.uniform(0.0, 360.0)
-        img = img.rotate(
-            angle, resample=Image.Resampling.BILINEAR, fillcolor=bg
-        )
+        img = img.rotate(angle, resample=Image.Resampling.BILINEAR, fillcolor=bg)
 
         arr = np.array(img, dtype=np.float32)
         # Аддитивный шум
@@ -145,3 +143,21 @@ def ascii_art(img_tensor: torch.Tensor, width: int = 24, height: int = 12) -> st
         line = "".join(chars[int(val) * (len(chars) - 1) // 255] for val in row)
         lines.append(line)
     return "\n".join(lines)
+
+
+def save_image_file(tensor: torch.Tensor, path: str) -> None:
+    """Сохранение тензора (3, H, W) [0..1] на диск в формате PNG/JPG."""
+    t = tensor.detach().cpu().squeeze()
+    if t.ndim == 3 and t.shape[0] == 3:
+        t = t.permute(1, 2, 0)
+    arr = (t.clamp(0.0, 1.0).numpy() * 255.0).astype(np.uint8)
+    Image.fromarray(arr).save(path)
+
+
+def load_image_file(path: str, size: int = DEFAULT_IMAGE_SIZE) -> torch.Tensor:
+    """Загрузка изображения с диска в тензор (3, size, size) [0..1]."""
+    img = (
+        Image.open(path).convert("RGB").resize((size, size), Image.Resampling.BILINEAR)
+    )
+    arr = np.array(img, dtype=np.float32).transpose(2, 0, 1) / 255.0
+    return torch.from_numpy(arr)

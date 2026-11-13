@@ -17,10 +17,12 @@
 ## Структура файлов
 
 - [my.py](file:///home/nik/git-repos/botvinkoy/laba2/my.py) — реализация перцептрона с нуля ([`init_network`](file:///home/nik/git-repos/botvinkoy/laba2/my.py#L22-L36), [`forward`](file:///home/nik/git-repos/botvinkoy/laba2/my.py#L38-L50), [`backward`](file:///home/nik/git-repos/botvinkoy/laba2/my.py#L52-L73), [`train`](file:///home/nik/git-repos/botvinkoy/laba2/my.py#L75-L125), [`evaluate`](file:///home/nik/git-repos/botvinkoy/laba2/my.py#L127-L198), сохранение/загрузка в `model.json`).
+- [lib.py](file:///home/nik/git-repos/botvinkoy/laba2/lib.py) — реализация перцептрона на PyTorch (nn.Sequential, SGD, MSELoss).
+- [comp.py](file:///home/nik/git-repos/botvinkoy/laba2/comp.py) — сравнение самодельного перцептрона и PyTorch (время, точность, ускорение).
 - [model.py](file:///home/nik/git-repos/botvinkoy/laba2/model.py) — интерфейсный модуль для обратной совместимости.
-- [dataset.py](file:///home/nik/git-repos/botvinkoy/laba2/dataset.py) — генерация изображений 128×128 (Pillow), аугментации, многопроцессорная генерация (`multiprocessing.Pool`), ASCII-визуализатор.
-- [main.py](file:///home/nik/git-repos/botvinkoy/laba2/main.py) — консольное меню, опция распараллеливания на CPU и авто-тест.
-- [test_laba2.py](file:///home/nik/git-repos/botvinkoy/laba2/test_laba2.py) — набор юнит-тестов перцептрона и генерации данных.
+- [dataset.py](file:///home/nik/git-repos/botvinkoy/laba2/dataset.py) — генерация изображений 128×128 (Pillow), сохранение/загрузка картинок с диска, аугментации, мультипроцессинг (`multiprocessing.Pool`), ASCII-визуализатор.
+- [main.py](file:///home/nik/git-repos/botvinkoy/laba2/main.py) — интерактивное консольное меню, классификация пользовательских картинок, бенчмарки и CLI-аргументы.
+- [test_laba2.py](file:///home/nik/git-repos/botvinkoy/laba2/test_laba2.py) — юнит-тесты (батч/без батча, с/без мультипроцессинга, сохранение на диск, сравнение с torch, тихий режим).
 
 ---
 
@@ -33,10 +35,16 @@ uv sync
 # Интерактивное меню
 uv run python main.py
 
+# Распознавание собственной картинки по пути
+uv run python main.py --image path/to/image.png
+
+# Сравнение с PyTorch
+uv run python comp.py
+
 # Полная автоматическая проверка всех этапов (режим сдачи)
 uv run python main.py --auto
 
-# Запуск тестов
+# Запуск тестов (тихий режим)
 uv run python test_laba2.py
 ```
 
@@ -46,13 +54,16 @@ uv run python test_laba2.py
 
 ```text
 1. Сгенерировать датасет (3 класса, размер 128x128)
-2. Обучить перцептрон на текущем датасете (~1 мин)
+2. Обучить перцептрон на текущем датасете (выбор размера батча)
 3. Автоматическая проверка на тестовой выборке (метрики по классам)
 4. Проверить случайный рисунок (ASCII-визуализация в консоли)
-5. Уменьшить количество одного класса (дисбаланс: 100-300)
-6. Переключить искажения (шум, повороты, битые пиксели, цвета)
-7. Настройка распараллеливания на ядра CPU (выбор ядер + бенчмарк)
-8. Полный авто-тест всех этапов задания (режим демонстрации)
-9. Сохранить / Загрузить веса перцептрона (model.json)
+5. Распознать свою картинку по пути к файлу
+6. Сохранить образец картинки на диск
+7. Сравнение с PyTorch (lib.py / comp.py)
+8. Уменьшить количество одного класса (дисбаланс: 100-300)
+9. Переключить искажения (шум, повороты, битые пиксели, цвета)
+10. Настройка распараллеливания на ядра CPU (выбор ядер + бенчмарк)
+11. Полный авто-тест всех этапов задания (режим демонстрации)
+12. Сохранить / Загрузить веса перцептрона (model.json)
 0. Выход
 ```
