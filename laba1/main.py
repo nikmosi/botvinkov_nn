@@ -40,42 +40,51 @@ def forward(network: dict[str, list], inputs: list[float]) -> list[list[float]]:
     return memory
 
 
+def backward(
+    network: dict[str, list],
+    memory: list[list[float]],
+    target: float,
+    lr: float = 0.5,
+) -> float:
+    weights, biases = network["weights"], network["biases"]
+    output = memory[-1][0]
+    error = target - output
+    d_o = error * sigmoid_derivative(output)
+
+    deltas = [[d_o]]
+    for back_step in range(1, len(weights)):
+        from_ = deltas[-1]
+        w = weights[-back_step]
+        mem = memory[-back_step - 1]
+        to_ = [
+            sigmoid_derivative(mem[i])
+            * sum(w[i][j] * from_[j] for j in range(len(from_)))
+            for i in range(len(w))
+        ]
+        deltas.append(to_)
+
+    deltas.reverse()
+    for layer_idx in range(len(weights)):
+        d_next = deltas[layer_idx]
+        a_prev = memory[layer_idx]
+        for i in range(len(d_next)):
+            biases[layer_idx][i] += lr * d_next[i]
+            for j in range(len(a_prev)):
+                weights[layer_idx][j][i] += lr * d_next[i] * a_prev[j]
+
+    return error**2
+
+
 def train(network: dict[str, list], steps: int = 30000, lr: float = 0.5) -> None:
     print(f"Обучение: {steps} шагов...")
     total_loss = 0.0
-    weights = network["weights"]
-    biases = network["biases"]
 
     for step in range(steps):
         x = [random.random(), random.random()]
         y = (x[0] + x[1]) / 2.0
 
         memory = forward(network, x)
-        o_actual = memory[-1][0]
-        error = y - o_actual
-        total_loss += error**2
-        d_o = error * sigmoid_derivative(o_actual)
-
-        deltas = [[d_o]]
-        for back_step in range(1, len(weights)):
-            from_ = deltas[-1]
-            w = weights[-back_step]
-            mem = memory[-back_step - 1]
-            to_ = []
-            for i in range(len(w)):
-                fn = sigmoid_derivative(mem[i])
-                s = sum(w[i][j] * from_[j] for j in range(len(from_)))
-                to_.append(fn * s)
-            deltas.append(to_)
-
-        deltas.reverse()
-        for layer_idx in range(len(weights)):
-            d_next = deltas[layer_idx]
-            a_prev = memory[layer_idx]
-            for i in range(len(d_next)):
-                biases[layer_idx][i] += lr * d_next[i]
-                for j in range(len(a_prev)):
-                    weights[layer_idx][j][i] += lr * d_next[i] * a_prev[j]
+        total_loss += backward(network, memory, target=y, lr=lr)
 
         if (step + 1) % (steps // 5 or 1) == 0:
             avg_loss = total_loss / (steps // 5 or 1)
@@ -94,12 +103,11 @@ def load_model(path: str = "model.json") -> dict[str, list]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if isinstance(data, list):
-        # Backward compatibility with weight-only models
         data = {
             "weights": data,
             "biases": [[0.0 for _ in layer[0]] for layer in data],
         }
-    print(f"Модель успешно загружена из '{path}'.")
+    print(f"Модель загружена '{path}'.")
     return data
 
 
@@ -126,7 +134,7 @@ def main() -> None:
     network = init_network(sizes)
 
     while True:
-        print("\n=== Меню нейросети ===")
+        print("\n=== Меню ===")
         print("1. Обучить модель")
         print("2. Сохранить модель")
         print("3. Загрузить модель")
