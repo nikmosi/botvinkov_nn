@@ -4,7 +4,9 @@ from typing import Any
 
 import torch
 
-from dataset import CLASSES
+from dataset import CLASSES, DEFAULT_IMAGE_SIZE
+
+DEFAULT_INPUT_SIZE = DEFAULT_IMAGE_SIZE * DEFAULT_IMAGE_SIZE * 3  # 128*128*3 = 49152
 
 
 def sigmoid(x: torch.Tensor) -> torch.Tensor:
@@ -20,7 +22,7 @@ def sigmoid_derivative(a: torch.Tensor) -> torch.Tensor:
 def init_network(sizes: list[int] | None = None) -> dict[str, Any]:
     """Инициализация простого перцептрона: веса и смещения по слоям (как в laba1)."""
     if sizes is None:
-        sizes = [3072, 64, 3]  # 32*32*3 пикселей -> 64 скрытых -> 3 класса
+        sizes = [DEFAULT_INPUT_SIZE, 256, 3]  # 128*128*3 -> 256 скрытых -> 3 класса (~1 мин обучения)
 
     weights = []
     biases = []
@@ -78,8 +80,8 @@ def train(
     network: dict[str, Any],
     x_train: torch.Tensor,
     y_train: torch.Tensor,
-    epochs: int = 4,
-    batch_size: int = 64,
+    epochs: int = 6,
+    batch_size: int = 32,
     lr: float = 0.5,
     verbose: bool = True,
 ) -> float:

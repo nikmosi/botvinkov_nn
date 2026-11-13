@@ -9,7 +9,9 @@ import torch
 import dataset
 import my
 
+
 DEFAULT_COUNTS = [3000, 3000, 3000]
+IMAGE_SIZE = dataset.DEFAULT_IMAGE_SIZE  # 128x128
 
 
 def print_banner(cores: int, counts: list[int], augment: bool) -> None:
@@ -18,51 +20,61 @@ def print_banner(cores: int, counts: list[int], augment: bool) -> None:
     print("\n" + "=" * 68)
     print("      Лабораторная работа №2: Простой перцептрон (MLP)")
     print(
-        f"  Датасет: {counts} ({mode_str}) | Искажения: {aug_str}"
+        f"  Датасет: {counts} ({mode_str}) | Размер: {IMAGE_SIZE}x{IMAGE_SIZE} | Искажения: {aug_str}"
     )
     print(f"  Активные ядра CPU: {cores} из {os.cpu_count() or 1}")
     print("=" * 68)
 
 
-def benchmark_cores(
-    counts: list[int], augment: bool, max_cores: int
-) -> None:
+def benchmark_cores(counts: list[int], augment: bool, max_cores: int) -> None:
     """Бенчмарк производительности: 1 ядро vs N ядер (по образцу laba1)."""
     print("\n--- Запуск сравнительного бенчмарка (1 ядро vs N ядер) ---")
-    bench_counts = [min(c, 1500) for c in counts]
+    bench_counts = [min(c, 800) for c in counts]
     print(f"Тестовая выборка для замера: {bench_counts}")
 
     # 1. Замер генерации данных
     print("\n1. Тест многопроцессорной генерации данных (multiprocessing.Pool):")
     t0 = time.perf_counter()
-    dataset.create_dataset(bench_counts, augment=augment, test_per_class=300, n_jobs=1)
+    dataset.create_dataset(
+        bench_counts, augment=augment, test_per_class=200, n_jobs=1, size=IMAGE_SIZE
+    )
     t_gen_1 = time.perf_counter() - t0
 
     t0 = time.perf_counter()
     dataset.create_dataset(
-        bench_counts, augment=augment, test_per_class=300, n_jobs=max_cores
+        bench_counts,
+        augment=augment,
+        test_per_class=200,
+        n_jobs=max_cores,
+        size=IMAGE_SIZE,
     )
     t_gen_n = time.perf_counter() - t0
 
     # 2. Замер обучения перцептрона
     print("\n2. Тест параллельного обучения перцептрона (torch.set_num_threads):")
     x_tr, y_tr, _, _ = dataset.create_dataset(
-        bench_counts, augment=augment, test_per_class=100, n_jobs=max_cores
+        bench_counts,
+        augment=augment,
+        test_per_class=50,
+        n_jobs=max_cores,
+        size=IMAGE_SIZE,
     )
+
+    d_in = x_tr.shape[1] * x_tr.shape[2] * x_tr.shape[3]
 
     # 1 ядро
     torch.set_num_threads(1)
-    net_1 = my.init_network([3072, 64, 3])
+    net_1 = my.init_network([d_in, 256, 3])
     t0 = time.perf_counter()
-    my.train(net_1, x_tr, y_tr, epochs=1, verbose=False)
+    my.train(net_1, x_tr, y_tr, epochs=1, batch_size=32, verbose=False)
     t_train_1 = time.perf_counter() - t0
 
-    # N ядер (или 4 ядра для оптимального параллелизма)
+    # N ядер (оптимальное число потоков)
     opt_cores = min(max_cores, 4)
     torch.set_num_threads(opt_cores)
-    net_n = my.init_network([3072, 64, 3])
+    net_n = my.init_network([d_in, 256, 3])
     t0 = time.perf_counter()
-    my.train(net_n, x_tr, y_tr, epochs=1, verbose=False)
+    my.train(net_n, x_tr, y_tr, epochs=1, batch_size=32, verbose=False)
     t_train_n = time.perf_counter() - t0
 
     torch.set_num_threads(max_cores)
@@ -139,8 +151,8 @@ def run_random_check(
     pred_cls, probs = my.predict_single(network, sample)
 
     print("\n" + "-" * 40)
-    print(f"Случайный тестовый образец #{idx}:")
-    print(dataset.ascii_art(sample, width=22, height=11))
+    print(f"Случайный тестовый образец #{idx} ({IMAGE_SIZE}x{IMAGE_SIZE}):")
+    print(dataset.ascii_art(sample, width=24, height=12))
     print("-" * 40)
     print(f"Истинный класс:      {dataset.CLASSES[true_cls]}")
     print(f"Предсказанный класс: {dataset.CLASSES[pred_cls]}")
@@ -156,21 +168,28 @@ def run_random_check(
 def run_auto_test(max_cores: int) -> None:
     """Автоматическая проверка всех этапов лабораторной работы на перцептроне."""
     print("\n" + "#" * 68)
-    print("     ПОЛНАЯ АВТОМАТИЧЕСКАЯ ПРОВЕРКА: ПРОСТОЙ ПЕРЦЕПТРОН (MLP)")
+    print(f"   ПОЛНАЯ АВТОМАТИЧЕСКАЯ ПРОВЕРКА: ПЕРЦЕПТРОН ({IMAGE_SIZE}x{IMAGE_SIZE})")
     print("#" * 68)
 
     torch.set_num_threads(min(max_cores, 4))
+    d_in = IMAGE_SIZE * IMAGE_SIZE * 3
 
     # ЭТАП 1: 3 класса по 3000 картинок (чистые)
-    print("\n>>> ЭТАП 1: Генерация 3 классов по 3000 картинок (чистые)")
+    print(
+        f"\n>>> ЭТАП 1: Генерация 3 классов по 3000 картинок ({IMAGE_SIZE}x{IMAGE_SIZE})"
+    )
     x_tr, y_tr, x_te, y_te = dataset.create_dataset(
-        [3000, 3000, 3000], augment=False, test_per_class=600, n_jobs=max_cores
+        [3000, 3000, 3000],
+        augment=False,
+        test_per_class=600,
+        n_jobs=max_cores,
+        size=IMAGE_SIZE,
     )
     print(f"Обучающая выборка: {x_tr.shape[0]} шт. | Тестовая: {x_te.shape[0]} шт.")
 
-    net = my.init_network([3072, 64, 3])
-    print("\n>>> Обучение перцептрона на сбалансированных чистых данных:")
-    my.train(net, x_tr, y_tr, epochs=3, verbose=True)
+    net = my.init_network([d_in, 256, 3])
+    print(f"\n>>> Обучение перцептрона ([{d_in}, 256, 3], ~1 мин)...")
+    my.train(net, x_tr, y_tr, epochs=6, batch_size=32, verbose=True)
 
     print("\n>>> Оценка качества по каждому классу (сбалансированные чистые):")
     my.evaluate(net, x_te, y_te, verbose=True)
@@ -178,13 +197,17 @@ def run_auto_test(max_cores: int) -> None:
     # ЭТАП 2: Дисбаланс классов (уменьшение одного класса до 200)
     print("\n>>> ЭТАП 2: Дисбаланс классов (Класс 'Треугольник' уменьшен до 200 шт.)")
     x_tr_imb, y_tr_imb, x_te_imb, y_te_imb = dataset.create_dataset(
-        [3000, 3000, 200], augment=False, test_per_class=600, n_jobs=max_cores
+        [3000, 3000, 200],
+        augment=False,
+        test_per_class=600,
+        n_jobs=max_cores,
+        size=IMAGE_SIZE,
     )
     print(f"Обучающая выборка с дисбалансом: {x_tr_imb.shape[0]} шт. [3000, 3000, 200]")
 
-    net_imb = my.init_network([3072, 64, 3])
+    net_imb = my.init_network([d_in, 256, 3])
     print("\n>>> Обучение перцептрона на несбалансированных данных:")
-    my.train(net_imb, x_tr_imb, y_tr_imb, epochs=3, verbose=True)
+    my.train(net_imb, x_tr_imb, y_tr_imb, epochs=6, batch_size=32, verbose=True)
 
     print("\n>>> Оценка качества по каждому классу при дисбалансе:")
     my.evaluate(net_imb, x_te_imb, y_te_imb, verbose=True)
@@ -192,11 +215,15 @@ def run_auto_test(max_cores: int) -> None:
     # ЭТАП 3: Искажения (шумы, повороты, битые пиксели, цвета)
     print("\n>>> ЭТАП 3: Добавление искажений (шум, поворот, битые пиксели, цвета)")
     x_tr_aug, y_tr_aug, x_te_aug, y_te_aug = dataset.create_dataset(
-        [3000, 3000, 3000], augment=True, test_per_class=600, n_jobs=max_cores
+        [3000, 3000, 3000],
+        augment=True,
+        test_per_class=600,
+        n_jobs=max_cores,
+        size=IMAGE_SIZE,
     )
-    net_aug = my.init_network([3072, 64, 3])
+    net_aug = my.init_network([d_in, 256, 3])
     print("\n>>> Обучение перцептрона на данных с искажениями:")
-    my.train(net_aug, x_tr_aug, y_tr_aug, epochs=4, verbose=True)
+    my.train(net_aug, x_tr_aug, y_tr_aug, epochs=6, batch_size=32, verbose=True)
 
     print("\n>>> Оценка качества по каждому классу на искаженных данных:")
     my.evaluate(net_aug, x_te_aug, y_te_aug, verbose=True)
@@ -208,13 +235,15 @@ def run_auto_test(max_cores: int) -> None:
 
     # ЭТАП 5: Бенчмарк распараллеливания на ядра
     print("\n>>> ЭТАП 5: Замер параллелизма CPU (1 ядро vs N ядер):")
-    benchmark_cores([1500, 1500, 1500], augment=False, max_cores=max_cores)
+    benchmark_cores([800, 800, 800], augment=False, max_cores=max_cores)
 
     print("\n[OK] Полная автоматическая проверка завершена успешно!")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Лабораторная работа 2: Простой перцептрон")
+    parser = argparse.ArgumentParser(
+        description="Лабораторная работа 2: Простой перцептрон"
+    )
     parser.add_argument(
         "--auto", action="store_true", help="Запустить полный авто-тест всех этапов"
     )
@@ -231,31 +260,36 @@ def main() -> None:
     # Состояние приложения: простой перцептрон (как в laba1/my.py)
     counts = list(DEFAULT_COUNTS)
     augment = False
-    net = my.init_network([3072, 64, 3])
+    d_in = IMAGE_SIZE * IMAGE_SIZE * 3
+    net = my.init_network([d_in, 256, 3])
     x_train, y_train, x_test, y_test = None, None, None, None
 
     while True:
         print_banner(current_cores, counts, augment)
-        print("1. Сгенерировать датасет (3 класса, размер 32x32)")
-        print("2. Обучить перцептрон на текущем датасете")
-        print("3. Автоматическая проверка на тестовой выборке (метрики по классам)")
-        print("4. Проверить случайный рисунок (ASCII-визуализация в консоли)")
-        print("5. Уменьшить количество одного класса (дисбаланс: 100-300)")
-        print("6. Переключить искажения (шум, повороты, битые пиксели, цвета)")
-        print("7. Настройка распараллеливания на ядра CPU (выбор ядер + бенчмарк)")
-        print("8. Полный авто-тест всех этапов задания (режим демонстрации)")
-        print("9. Сохранить / Загрузить веса перцептрона (model.json)")
+        print(f"1. Сгенерировать датасет (3 класса, размер {IMAGE_SIZE}x{IMAGE_SIZE})")
+        print("2. Обучить на текущем датасете")
+        print("3. Автоматическая проверка на тестовой выборке")
+        print("4. Проверить случайный рисунок")
+        print("5. Уменьшить количество одного класса")
+        print("6. Переключить искажения")
+        print("7. Настройка распараллеливания на ядра CPU")
+        print("8. Полный авто-тест всех этапов задания")
+        print("9. Сохранить / Загрузить (model.json)")
         print("0. Выход")
 
         choice = input("Выберите действие: ").strip()
 
         if choice == "1":
             print(
-                f"\nГенерация датасета {counts} (искажения: {augment}, ядер: {current_cores})..."
+                f"\nГенерация датасета {counts} (размер: {IMAGE_SIZE}x{IMAGE_SIZE}, искажения: {augment}, ядер: {current_cores})..."
             )
             t0 = time.perf_counter()
             x_train, y_train, x_test, y_test = dataset.create_dataset(
-                counts, augment=augment, test_per_class=600, n_jobs=current_cores
+                counts,
+                augment=augment,
+                test_per_class=600,
+                n_jobs=current_cores,
+                size=IMAGE_SIZE,
             )
             dt = time.perf_counter() - t0
             print(
@@ -266,10 +300,12 @@ def main() -> None:
             if x_train is None:
                 print("\nСначала сгенерируйте датасет (пункт 1)!")
                 continue
-            raw_ep = input("Количество эпох [4]: ").strip()
-            epochs = int(raw_ep) if raw_ep.isdigit() else 4
-            print(f"\nОбучение перцептрона ({epochs} эпох, ядер: {current_cores})...")
-            my.train(net, x_train, y_train, epochs=epochs, verbose=True)
+            raw_ep = input("Количество эпох [6]: ").strip()
+            epochs = int(raw_ep) if raw_ep.isdigit() else 6
+            print(
+                f"\nОбучение перцептрона ({epochs} эпох, батч 32, ~1 мин, ядер: {current_cores})..."
+            )
+            my.train(net, x_train, y_train, epochs=epochs, batch_size=32, verbose=True)
 
         elif choice == "3":
             if x_test is None:
@@ -289,10 +325,10 @@ def main() -> None:
             for i, name in enumerate(dataset.CLASSES):
                 print(f"  {i}: {name}")
             raw_c = input("Выберите класс для уменьшения [2 - Треугольник]: ").strip()
-            cls_idx = (
-                int(raw_c) if raw_c.isdigit() and 0 <= int(raw_c) <= 2 else 2
-            )
-            raw_n = input("Количество примеров для этого класса (100..300) [200]: ").strip()
+            cls_idx = int(raw_c) if raw_c.isdigit() and 0 <= int(raw_c) <= 2 else 2
+            raw_n = input(
+                "Количество примеров для этого класса (100..300) [200]: "
+            ).strip()
             cnt = int(raw_n) if raw_n.isdigit() and 50 <= int(raw_n) <= 1000 else 200
 
             counts = list(DEFAULT_COUNTS)
@@ -301,7 +337,11 @@ def main() -> None:
             print("Перегенерируем датасет с дисбалансом...")
             t0 = time.perf_counter()
             x_train, y_train, x_test, y_test = dataset.create_dataset(
-                counts, augment=augment, test_per_class=600, n_jobs=current_cores
+                counts,
+                augment=augment,
+                test_per_class=600,
+                n_jobs=current_cores,
+                size=IMAGE_SIZE,
             )
             print(f"Датасет обновлен за {time.perf_counter() - t0:.2f} сек.")
 
@@ -313,7 +353,11 @@ def main() -> None:
             if ans != "н":
                 t0 = time.perf_counter()
                 x_train, y_train, x_test, y_test = dataset.create_dataset(
-                    counts, augment=augment, test_per_class=600, n_jobs=current_cores
+                    counts,
+                    augment=augment,
+                    test_per_class=600,
+                    n_jobs=current_cores,
+                    size=IMAGE_SIZE,
                 )
                 print(f"Датасет перегенерирован за {time.perf_counter() - t0:.2f} сек.")
 
@@ -324,7 +368,9 @@ def main() -> None:
             run_auto_test(max_cores)
 
         elif choice == "9":
-            sub = input("1. Сохранить веса в model.json\n2. Загрузить веса из model.json\nВыберите: ").strip()
+            sub = input(
+                "1. Сохранить веса в model.json\n2. Загрузить веса из model.json\nВыберите: "
+            ).strip()
             if sub == "1":
                 my.save_model(net, "model.json")
             elif sub == "2":

@@ -6,10 +6,11 @@ import torch
 from PIL import Image, ImageDraw
 
 CLASSES = ["Круг", "Квадрат", "Треугольник"]
+DEFAULT_IMAGE_SIZE = 128
 
 
 def generate_single_image(
-    cls: int, augment: bool = False, size: int = 32
+    cls: int, augment: bool = False, size: int = DEFAULT_IMAGE_SIZE
 ) -> np.ndarray:
     """Генерация одного изображения (3, size, size) в формате float32 [0, 1]."""
     if augment:
@@ -83,15 +84,17 @@ def create_dataset(
     augment: bool = False,
     test_per_class: int = 600,
     n_jobs: int = 1,
+    size: int = DEFAULT_IMAGE_SIZE,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Создает обучающую и тестовую выборки.
 
     counts: количество обучающих примеров для каждого класса [cls0, cls1, cls2]
     test_per_class: количество тестовых примеров на класс
     n_jobs: количество параллельных процессов для генерации
+    size: размер стороны квадратного изображения (по умолчанию 128)
     """
-    train_tasks = [(c, cnt, augment, 32) for c, cnt in enumerate(counts)]
-    test_tasks = [(c, test_per_class, augment, 32) for c in range(len(counts))]
+    train_tasks = [(c, cnt, augment, size) for c, cnt in enumerate(counts)]
+    test_tasks = [(c, test_per_class, augment, size) for c in range(len(counts))]
 
     all_tasks = train_tasks + test_tasks
 
